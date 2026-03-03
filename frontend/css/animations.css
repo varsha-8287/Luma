@@ -1,0 +1,161 @@
+/* ============================================================
+   QUESTFLOW — ANIMATIONS
+   ============================================================ */
+
+/* ── XP Float ── */
+@keyframes xpFloat {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  80%  { transform: translateY(-60px) scale(1.1); opacity: 0.8; }
+  100% { transform: translateY(-80px) scale(0.8); opacity: 0; }
+}
+.xp-float {
+  position: fixed;
+  pointer-events: none; z-index: 5000;
+  font-family: 'Syne', sans-serif;
+  font-size: 1.4rem; font-weight: 800;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent-glow);
+  animation: xpFloat 1.4s ease-out forwards;
+}
+
+/* ── Level Up Splash ── */
+@keyframes levelUpSplash {
+  0%   { transform: translate(-50%,-50%) scale(0.5); opacity: 0; }
+  40%  { transform: translate(-50%,-50%) scale(1.15); opacity: 1; }
+  70%  { transform: translate(-50%,-50%) scale(0.95); }
+  85%  { transform: translate(-50%,-50%) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1); opacity: 0; }
+}
+.level-up-splash {
+  position: fixed; top: 50%; left: 50%;
+  z-index: 5000; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  animation: levelUpSplash 2s ease forwards;
+}
+.level-up-splash .level-up-icon {
+  font-size: 5rem; line-height: 1;
+}
+.level-up-splash .level-up-text {
+  font-family: 'Syne', sans-serif;
+  font-size: 2.2rem; font-weight: 800;
+  color: var(--amber);
+  text-shadow: 0 0 30px var(--amber-glow);
+  white-space: nowrap;
+}
+.level-up-splash .level-up-sub {
+  font-size: 1rem; color: var(--text-secondary);
+}
+
+/* ── Pulse ring on XP bar ── */
+@keyframes pulseRing {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+.pulse-ring {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px; height: 40px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: pulseRing 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ── Streak fire pulse ── */
+@keyframes firePulse {
+  0%,100% { transform: scale(1); filter: brightness(1); }
+  50%      { transform: scale(1.2); filter: brightness(1.3); }
+}
+.fire-pulse { animation: firePulse 0.6s ease; }
+
+/* ── Badge unlock pop ── */
+@keyframes badgePop {
+  0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+  70%  { transform: scale(1.15) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.badge-pop { animation: badgePop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* ── Card entrance ── */
+@keyframes cardEntrance {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-enter { animation: cardEntrance 0.4s ease forwards; }
+
+/* ── Shake (error) ── */
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  40%      { transform: translateX(6px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(4px); }
+}
+.shake { animation: shake 0.4s ease; }
+
+/* ── Score ring fill ── */
+@keyframes ringDraw {
+  from { stroke-dashoffset: 314; }
+}
+.ring-animate { animation: ringDraw 1s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* ── Stagger delay utility ── */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.10s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.20s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* ── Pulsing glow on streak chip ── */
+@keyframes streakGlow {
+  0%,100% { box-shadow: 0 0 8px rgba(255,182,39,0.3); }
+  50%      { box-shadow: 0 0 20px rgba(255,182,39,0.6); }
+}
+.streak-active { animation: streakGlow 2s ease-in-out infinite; }
+
+/* ── Prediction bar shimmer ── */
+@keyframes predShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.prediction-bar-inner {
+  background: linear-gradient(90deg, var(--blue) 0%, var(--accent) 50%, var(--blue) 100%);
+  background-size: 200% 100%;
+  animation: predShimmer 3s linear infinite;
+}
+
+/* ── Tooltip fade ── */
+@keyframes tooltipFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+[data-tooltip]:hover::after {
+  animation: tooltipFade 0.2s ease;
+}
+
+/* ── Burnout warning pulse ── */
+@keyframes warningPulse {
+  0%,100% { border-color: rgba(255,182,39,0.3); }
+  50%      { border-color: rgba(255,182,39,0.7); }
+}
+.alert-banner { animation: warningPulse 2s ease-in-out infinite; }
+
+/* ── Page load stagger ── */
+.stats-grid .stat-card:nth-child(1) { animation: cardEntrance 0.4s 0.05s ease both; }
+.stats-grid .stat-card:nth-child(2) { animation: cardEntrance 0.4s 0.10s ease both; }
+.stats-grid .stat-card:nth-child(3) { animation: cardEntrance 0.4s 0.15s ease both; }
+.stats-grid .stat-card:nth-child(4) { animation: cardEntrance 0.4s 0.20s ease both; }
+
+/* ── Task completion checkmark ── */
+@keyframes checkPop {
+  0%   { transform: scale(0); }
+  70%  { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+.task-check .check-icon { animation: checkPop 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+
+/* ── Confetti fall ── */
+@keyframes confettiFall {
+  0%   { transform: translateY(-10px) rotateZ(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotateZ(720deg); opacity: 0; }
+}

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Luma — Light your Day</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+</head>
+<body class="auth-page">
+
+  <!-- Animated Background -->
+  <div class="bg-grid"></div>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- Floating XP particles -->
+  <div class="particles" id="particles"></div>
+
+  <div class="auth-container">
+
+    <!-- Left Panel — Branding -->
+    <div class="auth-left">
+      <div class="brand-logo">
+        <div class="logo-icon">
+          <i class="fas fa-bolt"></i>
+        </div>
+        <span class="logo-text">Luma</span>
+      </div>
+
+      <div class="hero-content">
+        <h1 class="hero-title">
+          Turn your <span class="accent">tasks</span><br/>
+          into an <span class="accent">adventure.</span>
+        </h1>
+        <p class="hero-sub">AI-powered productivity with Duolingo-style XP, behavioral insights, and smart scheduling. Level up your life.</p>
+
+        <div class="feature-pills">
+          <div class="pill"><i class="fas fa-brain"></i> Smart Scheduling</div>
+          <div class="pill"><i class="fas fa-chart-line"></i> Behavioral AI</div>
+          <div class="pill"><i class="fas fa-trophy"></i> XP & Badges</div>
+          <div class="pill"><i class="fas fa-fire"></i> Streak Tracking</div>
+        </div>
+      </div>
+
+      <!-- Stats teaser -->
+      <div class="stats-row">
+        <div class="stat-item">
+          <span class="stat-num" data-target="84">0</span><span>%</span>
+          <span class="stat-label">avg completion</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-num" data-target="12">0</span><span>x</span>
+          <span class="stat-label">more productive</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-num" data-target="50">0</span><span>k+</span>
+          <span class="stat-label">quests completed</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel — Auth Forms -->
+    <div class="auth-right">
+      <div class="auth-card">
+
+        <!-- Tabs -->
+        <div class="auth-tabs">
+          <button class="tab-btn active" id="loginTab" onclick="switchTab('login')">Sign In</button>
+          <button class="tab-btn" id="registerTab" onclick="switchTab('register')">Sign Up</button>
+          <div class="tab-indicator" id="tabIndicator"></div>
+        </div>
+
+        <!-- Login Form -->
+        <div class="auth-form" id="loginForm">
+          <div class="form-header">
+            <h2>Welcome back, Hero</h2>
+            <p>Your quests are waiting</p>
+          </div>
+          <div id="loginError" class="alert alert-error hidden"></div>
+          <div class="form-group">
+            <label>Email</label>
+            <div class="input-wrap">
+              <i class="fas fa-envelope input-icon"></i>
+              <input type="email" id="loginEmail" placeholder="hero@questflow.app" autocomplete="email"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <div class="input-wrap">
+              <i class="fas fa-lock input-icon"></i>
+              <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password"/>
+              <button class="toggle-pw" onclick="togglePassword('loginPassword', this)"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+          <button class="btn-primary" id="loginBtn" onclick="handleLogin()">
+            <span class="btn-text">Enter the Quest</span>
+            <i class="fas fa-arrow-right"></i>
+            <span class="btn-loader hidden"><i class="fas fa-spinner fa-spin"></i></span>
+          </button>
+          <p class="auth-switch">New here? <a href="#" onclick="switchTab('register')">Create your account</a></p>
+        </div>
+
+        <!-- Register Form -->
+        <div class="auth-form hidden" id="registerForm">
+          <div class="form-header">
+            <h2>Create Your Hero</h2>
+            <p>Begin your productivity adventure</p>
+          </div>
+          <div id="registerError" class="alert alert-error hidden"></div>
+          <div id="registerSuccess" class="alert alert-success hidden"></div>
+          <div class="form-group">
+            <label>Full Name</label>
+            <div class="input-wrap">
+              <i class="fas fa-user input-icon"></i>
+              <input type="text" id="regName" placeholder="Your hero name"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <div class="input-wrap">
+              <i class="fas fa-envelope input-icon"></i>
+              <input type="email" id="regEmail" placeholder="hero@questflow.app"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <div class="input-wrap">
+              <i class="fas fa-lock input-icon"></i>
+              <input type="password" id="regPassword" placeholder="Min 6 characters"/>
+              <button class="toggle-pw" onclick="togglePassword('regPassword', this)"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password</label>
+            <div class="input-wrap">
+              <i class="fas fa-shield-alt input-icon"></i>
+              <input type="password" id="regConfirm" placeholder="Repeat password"/>
+            </div>
+          </div>
+          <button class="btn-primary" id="registerBtn" onclick="handleRegister()">
+            <span class="btn-text">Start My Journey</span>
+            <i class="fas fa-rocket"></i>
+            <span class="btn-loader hidden"><i class="fas fa-spinner fa-spin"></i></span>
+          </button>
+          <p class="auth-switch">Already a hero? <a href="#" onclick="switchTab('login')">Sign in</a></p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

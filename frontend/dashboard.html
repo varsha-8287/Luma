@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Luma — Light your Day</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="css/dashboard.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+</head>
+<body class="dashboard-page">
+
+  <!-- Confetti Canvas -->
+  <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
+
+  <!-- Mood Popup Modal -->
+  <div class="modal-overlay hidden" id="moodModal">
+    <div class="modal mood-modal">
+      <div class="modal-header">
+        <div class="modal-icon"><i class="fas fa-heart-pulse"></i></div>
+        <h3>How's your energy today?</h3>
+        <p>Your mood shapes your productivity score</p>
+      </div>
+      <div class="mood-grid">
+        <button class="mood-btn" data-mood="Happy" data-score="5" onclick="selectMood(this)">
+          <span class="mood-emoji">😊</span>
+          <span class="mood-label">Happy</span>
+          <span class="mood-xp">+5</span>
+        </button>
+        <button class="mood-btn" data-mood="Neutral" data-score="0" onclick="selectMood(this)">
+          <span class="mood-emoji">😐</span>
+          <span class="mood-label">Neutral</span>
+          <span class="mood-xp">0</span>
+        </button>
+        <button class="mood-btn" data-mood="Tired" data-score="-2" onclick="selectMood(this)">
+          <span class="mood-emoji">😴</span>
+          <span class="mood-label">Tired</span>
+          <span class="mood-xp">-2</span>
+        </button>
+        <button class="mood-btn" data-mood="Sad" data-score="-3" onclick="selectMood(this)">
+          <span class="mood-emoji">😢</span>
+          <span class="mood-label">Sad</span>
+          <span class="mood-xp">-3</span>
+        </button>
+        <button class="mood-btn" data-mood="Angry" data-score="-5" onclick="selectMood(this)">
+          <span class="mood-emoji">😠</span>
+          <span class="mood-label">Angry</span>
+          <span class="mood-xp">-5</span>
+        </button>
+      </div>
+      <div class="mood-actions">
+        <button class="btn-ghost" onclick="closeMoodModal()">Skip for now</button>
+        <button class="btn-primary" id="saveMoodBtn" onclick="saveMood()" disabled>Save Mood</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Task Modal -->
+  <div class="modal-overlay hidden" id="taskModal">
+    <div class="modal task-modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-plus-circle"></i> New Quest</h3>
+        <button class="modal-close" onclick="closeTaskModal()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="form-group">
+        <label>Quest Name *</label>
+        <input type="text" id="taskName" placeholder="What must be conquered?"/>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="taskDesc" placeholder="Details about this quest..." rows="3"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Priority</label>
+          <select id="taskPriority">
+            <option value="3">🔴 Critical</option>
+            <option value="2" selected>🟡 Normal</option>
+            <option value="1">🟢 Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="taskCategory">
+            <option value="work">💼 Work</option>
+            <option value="health">💪 Health</option>
+            <option value="personal">🏠 Personal</option>
+            <option value="learning">📚 Learning</option>
+            <option value="social">👥 Social</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Deadline *</label>
+        <input type="datetime-local" id="taskDeadline"/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeTaskModal()">Cancel</button>
+        <button class="btn-primary" onclick="createTask()">
+          <i class="fas fa-bolt"></i> Add Quest
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Journal Modal -->
+  <div class="modal-overlay hidden" id="journalModal">
+    <div class="modal journal-modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-feather-alt"></i> New Journal Entry</h3>
+        <button class="modal-close" onclick="closeJournalModal()"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="journalTitle" placeholder="Entry title..."/>
+      </div>
+      <div class="form-group">
+        <label>Your Thoughts</label>
+        <textarea id="journalContent" placeholder="Write freely..." rows="8"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeJournalModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveJournalEntry()">
+          <i class="fas fa-save"></i> Save Entry
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Badge Unlocked Toast -->
+  <div class="badge-toast hidden" id="badgeToast">
+    <div class="badge-toast-inner">
+      <div class="badge-icon" id="badgeIcon"></div>
+      <div class="badge-info">
+        <span class="badge-title">Badge Unlocked!</span>
+        <span class="badge-name" id="badgeName"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo-icon"><i class="fas fa-bolt"></i></div>
+      <span>Luma</span>
+    </div>
+
+    <div class="user-profile-mini">
+      <div class="avatar" id="sidebarAvatar">H</div>
+      <div class="user-info">
+        <span class="user-name" id="sidebarName">Hero</span>
+        <span class="user-level" id="sidebarLevel">Level 0</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-link active" data-section="dashboard" onclick="showSection('dashboard', this)">
+        <i class="fas fa-home"></i><span>Dashboard</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-link" data-section="tasks" onclick="showSection('tasks', this)">
+        <i class="fas fa-check-square"></i><span>Quests</span>
+        <div class="nav-badge" id="pendingBadge">0</div>
+      </a>
+      <a href="#" class="nav-link" data-section="analytics" onclick="showSection('analytics', this)">
+        <i class="fas fa-chart-line"></i><span>Analytics</span>
+      </a>
+      <a href="#" class="nav-link" data-section="journal" onclick="showSection('journal', this)">
+        <i class="fas fa-book-open"></i><span>Journal</span>
+      </a>
+      <a href="#" class="nav-link" data-section="badges" onclick="showSection('badges', this)">
+        <i class="fas fa-medal"></i><span>Badges</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="xp-mini-bar">
+        <div class="xp-mini-fill" id="xpMiniFill"></div>
+      </div>
+      <span class="xp-mini-label" id="xpMiniLabel">0 / 100 XP</span>
+      <button class="btn-logout" onclick="logout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+      <div class="topbar-greeting">
+        <span>Good <span id="timeOfDay">morning</span>,</span>
+        <strong id="topbarName">Hero</strong>
+      </div>
+      <div class="topbar-actions">
+        <div class="streak-chip">
+          <i class="fas fa-fire"></i>
+          <span id="topbarStreak">0</span> day streak
+        </div>
+        <button class="btn-add-task" onclick="openTaskModal()">
+          <i class="fas fa-plus"></i> New Quest
+        </button>
+      </div>
+    </header>
+
+    <!-- ======================== DASHBOARD SECTION ======================== -->
+    <section class="section active" id="section-dashboard">
+
+      <!-- Hero Stats Row -->
+      <div class="stats-grid">
+        <div class="stat-card stat-xp">
+          <div class="stat-icon"><i class="fas fa-star"></i></div>
+          <div class="stat-body">
+            <div class="stat-value" id="statXP">0</div>
+            <div class="stat-label">Total XP</div>
+          </div>
+          <div class="stat-spark"></div>
+        </div>
+        <div class="stat-card stat-level">
+          <div class="stat-icon"><i class="fas fa-layer-group"></i></div>
+          <div class="stat-body">
+            <div class="stat-value" id="statLevel">0</div>
+            <div class="stat-label">Level</div>
+          </div>
+        </div>
+        <div class="stat-card stat-score">
+          <div class="stat-icon"><i class="fas fa-gauge-high"></i></div>
+          <div class="stat-body">
+            <div class="stat-value" id="statScore">—</div>
+            <div class="stat-label">Productivity Score</div>
+          </div>
+        </div>
+        <div class="stat-card stat-streak">
+          <div class="stat-icon"><i class="fas fa-fire"></i></div>
+          <div class="stat-body">
+            <div class="stat-value" id="statStreak">0</div>
+            <div class="stat-label">Day Streak</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- XP Progress Bar -->
+      <div class="xp-progress-card">
+        <div class="xp-progress-header">
+          <span>Level <strong id="xpLevel">0</strong></span>
+          <span id="xpProgressText">0 / 100 XP to next level</span>
+          <span>Level <strong id="xpNextLevel">1</strong></span>
+        </div>
+        <div class="xp-bar-outer">
+          <div class="xp-bar-inner" id="xpBar" style="width:0%"></div>
+          <div class="xp-bar-glow" id="xpBarGlow" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Behavioral Alert (burnout / procrastination) -->
+      <div class="alert-banner hidden" id="behaviorAlert">
+        <i class="fas fa-triangle-exclamation"></i>
+        <span id="behaviorAlertText"></span>
+        <button onclick="this.parentElement.classList.add('hidden')"><i class="fas fa-times"></i></button>
+      </div>
+
+      <!-- Dashboard Grid: Tasks + Insights -->
+      <div class="dashboard-grid">
+
+        <!-- Today's Quests -->
+        <div class="dash-card quests-card">
+          <div class="card-header">
+            <h3><i class="fas fa-crosshairs"></i> Today's Quests</h3>
+            <button class="btn-sm" onclick="openTaskModal()"><i class="fas fa-plus"></i></button>
+          </div>
+          <div class="task-list" id="todayTaskList">
+            <div class="empty-state"><i class="fas fa-check-circle"></i><p>No quests for today!</p></div>
+          </div>
+        </div>
+
+        <!-- Mood + Discipline -->
+        <div class="side-cards">
+
+          <!-- Mood Summary -->
+          <div class="dash-card mood-card">
+            <div class="card-header">
+              <h3><i class="fas fa-heart-pulse"></i> Mood Today</h3>
+            </div>
+            <div class="mood-display" id="moodDisplay">
+              <span class="mood-big-emoji" id="moodEmoji">🤔</span>
+              <div class="mood-info">
+                <span class="mood-type" id="moodType">Not logged</span>
+                <span class="mood-score" id="moodScore">Log your mood</span>
+              </div>
+              <button class="btn-sm" onclick="openMoodModal()"><i class="fas fa-edit"></i></button>
+            </div>
+          </div>
+
+          <!-- Productivity Score -->
+          <div class="dash-card score-card">
+            <div class="card-header">
+              <h3><i class="fas fa-gauge-high"></i> Discipline Score</h3>
+            </div>
+            <div class="score-ring-wrap">
+              <svg class="score-ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                <circle class="ring-fill" id="scoreRingFill" cx="60" cy="60" r="50"
+                  stroke-dasharray="314" stroke-dashoffset="314"/>
+              </svg>
+              <div class="score-ring-label">
+                <span class="score-num" id="scoreRingNum">—</span>
+                <span class="score-unit">/100</span>
+              </div>
+            </div>
+            <div class="score-factors" id="scoreFactors"></div>
+          </div>
+
+          <!-- Smart Suggestions -->
+          <div class="dash-card suggestions-card">
+            <div class="card-header">
+              <h3><i class="fas fa-lightbulb"></i> AI Insights</h3>
+            </div>
+            <div class="suggestions-list" id="suggestionsList">
+              <div class="suggestion-item skeleton"></div>
+              <div class="suggestion-item skeleton"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Predictive Completion -->
+      <div class="dash-card prediction-card">
+        <div class="card-header">
+          <h3><i class="fas fa-crystal-ball"></i> Predictive Completion</h3>
+          <span class="card-badge">AI</span>
+        </div>
+        <div class="prediction-content" id="predictionContent">
+          <div class="prediction-bar-wrap">
+            <div class="prediction-label">Today's completion probability</div>
+            <div class="prediction-bar-outer">
+              <div class="prediction-bar-inner" id="predictionBar" style="width: 0%"></div>
+            </div>
+            <div class="prediction-pct" id="predictionPct">—%</div>
+          </div>
+          <div class="prediction-factors" id="predictionFactors"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ======================== TASKS SECTION ======================== -->
+    <section class="section hidden" id="section-tasks">
+      <div class="section-header">
+        <div>
+          <h2>Quest Board</h2>
+          <p>Smart-ranked by AI · Priority × Deadline × Behavior</p>
+        </div>
+        <button class="btn-primary" onclick="openTaskModal()">
+          <i class="fas fa-plus"></i> New Quest
+        </button>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="filter-tabs">
+        <button class="filter-tab active" onclick="filterTasks('all', this)">All</button>
+        <button class="filter-tab" onclick="filterTasks('Pending', this)">Pending</button>
+        <button class="filter-tab" onclick="filterTasks('Completed', this)">Completed</button>
+        <button class="filter-tab" onclick="filterTasks('Missed', this)">Missed</button>
+      </div>
+
+      <!-- Task Cards Grid -->
+      <div class="task-cards-grid" id="taskCardsGrid">
+        <div class="loading-state"><i class="fas fa-spinner fa-spin"></i> Loading quests...</div>
+      </div>
+    </section>
+
+    <!-- ======================== ANALYTICS SECTION ======================== -->
+    <section class="section hidden" id="section-analytics">
+      <div class="section-header">
+        <div>
+          <h2>Analytics</h2>
+          <p>Your productivity story, visualized</p>
+        </div>
+        <div class="date-range-btns">
+          <button class="range-btn active" onclick="setRange('week', this)">7D</button>
+          <button class="range-btn" onclick="setRange('month', this)">30D</button>
+        </div>
+      </div>
+
+      <!-- Spotify-style Wrapped -->
+      <div class="wrapped-banner" id="wrappedBanner">
+        <div class="wrapped-bg-text">WRAPPED</div>
+        <div class="wrapped-content">
+          <h3>Your Weekly Wrapped 🎉</h3>
+          <div class="wrapped-stats" id="wrappedStats"></div>
+        </div>
+        <button class="wrapped-close" onclick="document.getElementById('wrappedBanner').classList.add('hidden')">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Charts Grid -->
+      <div class="analytics-grid">
+        <div class="chart-card wide">
+          <div class="card-header"><h3><i class="fas fa-chart-bar"></i> XP Earned This Week</h3></div>
+          <div class="chart-wrap">
+            <canvas id="xpChart" height="200"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="card-header"><h3><i class="fas fa-smile"></i> Mood vs Productivity</h3></div>
+          <div class="chart-wrap">
+            <canvas id="moodChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="card-header"><h3><i class="fas fa-clock"></i> Completion Heatmap</h3></div>
+          <div class="heatmap-wrap" id="heatmapWrap"></div>
+        </div>
+
+        <div class="chart-card wide">
+          <div class="card-header"><h3><i class="fas fa-layer-group"></i> Category Breakdown</h3></div>
+          <div class="chart-wrap chart-row">
+            <canvas id="categoryChart" height="200" style="max-width:280px"></canvas>
+            <div class="category-legend" id="categoryLegend"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern Detection -->
+      <div class="dash-card pattern-card">
+        <div class="card-header">
+          <h3><i class="fas fa-magnifying-glass-chart"></i> Behavioral Patterns</h3>
+          <span class="card-badge beta">BETA</span>
+        </div>
+        <div class="patterns-grid" id="patternsGrid"></div>
+      </div>
+
+    </section>
+
+    <!-- ======================== JOURNAL SECTION ======================== -->
+    <section class="section hidden" id="section-journal">
+      <div class="section-header">
+        <div>
+          <h2>Quest Journal</h2>
+          <p>Reflect · Grow · Level Up</p>
+        </div>
+        <button class="btn-primary" onclick="openJournalModal()">
+          <i class="fas fa-feather-alt"></i> New Entry
+        </button>
+      </div>
+
+      <div class="journal-grid" id="journalGrid">
+        <div class="loading-state"><i class="fas fa-spinner fa-spin"></i> Loading entries...</div>
+      </div>
+    </section>
+
+    <!-- ======================== BADGES SECTION ======================== -->
+    <section class="section hidden" id="section-badges">
+      <div class="section-header">
+        <div>
+          <h2>Achievement Hall</h2>
+          <p>Your earned glory</p>
+        </div>
+      </div>
+      <div class="badges-grid" id="badgesGrid"></div>
+    </section>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/gamification.js"></script>
+  <script src="js/task.js"></script>
+  <script src="js/mood.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
