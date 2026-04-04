@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link rel="stylesheet" href="css/alarm.css"/>
 </head>
 <body class="dashboard-page">
 
@@ -172,6 +173,10 @@
       </a>
       <a href="#" class="nav-link" data-section="badges" onclick="showSection('badges', this)">
         <i class="fas fa-medal"></i><span>Badges</span>
+      </a>
+      <a href="#" class="nav-link" data-section="settings" onclick="showSection('settings', this); renderTTSToggle();">
+        <i class="fas fa-cog"></i><span>Settings</span>
+        <div class="nav-glow"></div>
       </a>
     </nav>
 
@@ -468,6 +473,17 @@
       <div class="badges-grid" id="badgesGrid"></div>
     </section>
 
+    <!-- ======================== SETTINGS SECTION ======================== -->
+    <section class="section hidden" id="section-settings">
+      <div class="section-header">
+        <div>
+          <h2>Settings</h2>
+          <p>Customize your Luma experience</p>
+        </div>
+      </div>
+      <div id="section-settings-inner"></div>
+    </section>
+
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -476,6 +492,9 @@
   <script src="js/task.js"></script>
   <script src="js/mood.js"></script>
   <script src="js/analytics.js"></script>
+  <script src="js/alarm.js"></script>
+  <script src="js/notifications.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/games.js"></script>
 </body>
 </html>
