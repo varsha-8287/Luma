@@ -91,7 +91,7 @@ function getXPMultiplierLabel(streak, moodScore) {
 // ============================================================
 function renderTTSToggle() {
   const enabled = localStorage.getItem('qf_tts') !== 'false';
-  const section = document.getElementById('section-settings');
+  const section = document.getElementById('section-settings'); if (!section) return;
   if (!section) return;
 
   section.innerHTML = `

@@ -98,23 +98,33 @@ function floatGameXP(el, xp, color = '#58e000') {
   setTimeout(() => d.remove(), 1200);
 }
 
-// ── Game XP Award ─────────────────────────────────────────────
-function awardGameXP(amount, reason) {
+// ── Game Score Submit (saves to MongoDB via /api/games/score) ──
+async function submitGameScore(gameId, score, duration, won, metadata = {}) {
   try {
-    if (typeof API !== 'undefined' && API.getToken) {
-      // Award via backend silently
-      fetch((window.BACKEND_URL||'http://localhost:5000/api').replace('/api','') + '/api/gamification/xp-history', {
-        method: 'GET', headers: { Authorization: 'Bearer ' + API.getToken() }
-      }).catch(() => {});
+    if (typeof API === 'undefined' || !API.getToken()) return null;
+    const result = await API.submitGameScore(gameId, score, duration, won, metadata);
+    // Sync user XP to local state
+    if (result?.user) {
+      currentUser = { ...(currentUser || {}), ...result.user };
+      API.setUser(currentUser);
+      if (typeof renderUserStats === 'function') renderUserStats({ user: result.user });
     }
-  } catch(e) {}
-  // Update local user
+    if (result?.leveled_up && typeof showLevelUp === 'function') showLevelUp(result.user?.level);
+    return result;
+  } catch(e) {
+    console.warn('Game score submit failed (offline?):', e.message);
+    return null;
+  }
+}
+
+// ── Game XP Award (kept for backward compat, now delegates to submitGameScore) ──
+function awardGameXP(amount, reason) {
+  // XP is now awarded server-side via submitGameScore
+  // This is a fallback for display only
   try {
     const user = API?.getUser?.();
     if (user) { user.totalXP = (user.totalXP||0) + amount; API.setUser(user); }
   } catch(e) {}
-  if (typeof pushNotification !== 'undefined')
-    pushNotification('badge', `🎮 ${reason}`, `You earned ${amount} XP from Brain Games!`);
 }
 
 // ── Game Stats Storage ────────────────────────────────────────
@@ -435,7 +445,7 @@ function initMemoryGame(canvas) {
     else SFX.wrong();
     showGameWin(canvas, won ? '🎉 You Won!' : '⏰ Time\'s Up!',
       won ? `Score: ${finalScore} · All pairs matched!` : `Score: ${finalScore} · ${matched.length/2}/${GRID_SIZE/2} pairs`,
-      won, finalScore, () => initMemoryGame(canvas));
+      won, finalScore, () => initMemoryGame(canvas), 'memory', 60-timer, {pairs_matched: matched.length/2, moves});
   }
 
   render(); updateHUD();
@@ -560,10 +570,10 @@ function initSudokuGame(canvas) {
       if (!best || timeStr < best) saveGameStat('sudoku','bestTime', timeStr);
       saveGameStat('sudoku','solved', getBest('sudoku','solved',0)+1);
       SFX.win(); awardGameXP(50, 'Sudoku Solver');
-      showGameWin(canvas, '🔢 Solved!', `Time: ${timeStr} · Errors: ${errors}`, true, 50, ()=>initSudokuGame(canvas));
+      showGameWin(canvas, '🔢 Solved!', `Time: ${timeStr} · Errors: ${errors}`, true, 50, ()=>initSudokuGame(canvas), 'sudoku', elapsed, {errors, time: timeStr});
     } else {
       SFX.wrong();
-      showGameWin(canvas, '💔 Game Over', `Too many errors (${errors}/3)`, false, 0, ()=>initSudokuGame(canvas));
+      showGameWin(canvas, '💔 Game Over', `Too many errors (${errors}/3)`, false, 0, ()=>initSudokuGame(canvas), 'sudoku', elapsed, {errors});
     }
   }
 
@@ -746,7 +756,7 @@ function initWordSearch(canvas) {
     if(won) { SFX.win(); awardGameXP(40,'Word Hunter'); }
     showGameWin(canvas, won?'🔤 All Found!':'⏰ Time\'s Up!',
       `Score: ${score} · ${foundWords.size}/${words.length} words found`,
-      won, score, ()=>initWordSearch(canvas));
+      won, score, ()=>initWordSearch(canvas), 'wordsearch', 120-timeLeft, {words_found: foundWords.size, total_words: words.length, theme});
   }
 }
 
@@ -871,33 +881,58 @@ function initNumberZen(canvas) {
     const won=reason==='win';
     if(won) { awardGameXP(100,'Zen Master 2048!'); SFX.win(); }
     showGameWin(canvas, won?'✨ 2048!':'💫 Game Over',
-      `Score: ${score} · Max Tile: ${maxTile}`, won, score, ()=>initNumberZen(canvas));
+      `Score: ${score} · Max Tile: ${maxTile}`, won, score, ()=>initNumberZen(canvas), 'numberzen', 0, {max_tile: maxTile});
   }
 
   addRandom(); addRandom(); renderBoard();
 }
 
 // ── Shared Win Screen ─────────────────────────────────────────
-function showGameWin(canvas, title, sub, won, score, replay) {
-  const overlay=document.createElement('div');
-  overlay.className='game-win-overlay';
-  overlay.innerHTML=`
+function showGameWin(canvas, title, sub, won, score, replay, gameId, duration, metadata) {
+  // Save to MongoDB
+  if (gameId) submitGameScore(gameId, score, duration || 0, won, metadata || {});
+
+  const overlay = document.createElement('div');
+  overlay.className = 'game-win-overlay';
+  overlay.innerHTML = `
     <div class="game-win-box">
-      <div class="game-win-emoji">${won?'🏆':'😤'}</div>
+      <div class="game-win-emoji">${won ? '🏆' : '😤'}</div>
       <div class="game-win-title">${title}</div>
       <div class="game-win-sub">${sub}</div>
-      ${won?`<div class="game-win-xp">+XP Earned!</div>`:''}
+      ${won ? '<div class="game-win-xp">+XP Earned!</div>' : ''}
       <div class="game-win-actions">
         <button class="btn-ghost" onclick="closeGame()"><i class="fas fa-home"></i> Hub</button>
-        <button class="btn-primary" style="width:auto;padding:12px 24px" onclick="this.closest('.game-win-overlay').remove();(${replay.toString()})()">
+        <button class="btn-primary" style="width:auto;padding:12px 24px" id="playAgainBtn">
           <i class="fas fa-redo"></i> Play Again
         </button>
       </div>
     </div>
   `;
-  canvas.style.position='relative';
+
+  canvas.style.position = 'relative';
   canvas.appendChild(overlay);
-  if(won) { SFX.win(); const r=canvas.getBoundingClientRect(); for(let i=0;i<5;i++) setTimeout(()=>burst(r.left+Math.random()*r.width,r.top+Math.random()*r.height,['#58e000','#ffb627','#a855f7','#3d9df3'][Math.floor(Math.random()*4)],16),i*180); }
+
+  // Attach replay via addEventListener — fixes the "Play Again" bug where
+  // serializing the closure with .toString() loses closed-over variables
+  // like `canvas`, causing the game to not reset on replay.
+  overlay.querySelector('#playAgainBtn').addEventListener('click', () => {
+    overlay.remove();
+    stopAllGames();
+    replay();
+  });
+
+  if (won) {
+    SFX.win();
+    const r = canvas.getBoundingClientRect();
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => burst(
+        r.left + Math.random() * r.width,
+        r.top  + Math.random() * r.height,
+        ['#58e000','#ffb627','#a855f7','#3d9df3'][Math.floor(Math.random() * 4)],
+        16
+      ), i * 180);
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════

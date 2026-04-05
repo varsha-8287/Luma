@@ -4,6 +4,7 @@ POST   /api/tasks
 GET    /api/tasks
 GET    /api/tasks/smart-ranked
 PUT    /api/tasks/:id/complete
+PUT    /api/tasks/:id/edit          ← NEW: edit name/desc/priority/category/deadline
 DELETE /api/tasks/:id
 """
 from flask import Blueprint, request, jsonify
@@ -94,7 +95,6 @@ def complete(task_id: str):
         return jsonify(error_response(f"Task is already {task['status']}.", 400)[0]), 400
 
     from utils.helpers import utc_now
-    from datetime import datetime, timezone
     now = utc_now()
     deadline_raw = task["deadline"]
     if isinstance(deadline_raw, str):
@@ -107,33 +107,104 @@ def complete(task_id: str):
     completed_early = now < deadline
     base_xp = Config.XP_COMPLETE_EARLY if completed_early else Config.XP_COMPLETE_ONTIME
 
-    # Award XP with multiplier
-    xp_result = award_xp(user_id, base_xp,
-                         f"Completed task: {task['name']}",
-                         task_id=task_id)
-
-    xp_earned = xp_result.get("xp_earned", base_xp)
-
+    xp_result   = award_xp(user_id, base_xp, f"Completed task: {task['name']}", task_id=task_id)
+    xp_earned   = xp_result.get("xp_earned", base_xp)
     updated_task = complete_task(task_id, user_id, xp_earned)
 
-    # Increment completed count
     from models.user_model import increment_completed_count
     increment_completed_count(user_id, early=completed_early)
 
     return jsonify({
-        "success": True,
-        "task": updated_task,
-        "xp_earned": xp_earned,
-        "xpEarned": xp_earned,
-        "base_xp": base_xp,
-        "multiplier": xp_result.get("multiplier", 1.0),
+        "success":         True,
+        "task":            updated_task,
+        "xp_earned":       xp_earned,
+        "xpEarned":        xp_earned,
+        "base_xp":         base_xp,
+        "multiplier":      xp_result.get("multiplier", 1.0),
         "completed_early": completed_early,
-        "completedEarly": completed_early,
-        "leveled_up": xp_result.get("leveled_up", False),
+        "completedEarly":  completed_early,
+        "leveled_up":      xp_result.get("leveled_up", False),
         "badges_unlocked": xp_result.get("badges_unlocked", []),
-        "user": xp_result.get("user"),
-        "updated_user": xp_result.get("user"),
+        "user":            xp_result.get("user"),
+        "updated_user":    xp_result.get("user"),
     }), 200
+
+
+# ── NEW: Edit a pending task ───────────────────────────────────
+@task_bp.route("/<task_id>/edit", methods=["PUT"])
+@jwt_required()
+def edit_task(task_id: str):
+    """
+    Edit a pending task's name, description, priority, category, or deadline.
+    Only Pending tasks can be edited.
+    Fields are all optional — only provided fields are updated.
+    """
+    user_id = get_jwt_identity()
+    task    = get_task_by_id(task_id, user_id)
+
+    if not task:
+        return jsonify(error_response("Task not found.", 404)[0]), 404
+    if task["status"] != "Pending":
+        return jsonify(error_response(
+            f"Only Pending tasks can be edited. This task is {task['status']}.", 400)[0]
+        ), 400
+
+    data = request.get_json(silent=True) or {}
+
+    from utils.db import get_db
+    from utils.helpers import utc_now, serialize_doc
+    from bson import ObjectId
+
+    updates = {}
+
+    if "name" in data and (data["name"] or "").strip():
+        updates["name"] = data["name"].strip()
+
+    if "description" in data:
+        updates["description"] = (data["description"] or "").strip()
+
+    if "priority" in data:
+        priority = int(data["priority"])
+        if priority in {1, 2, 3}:
+            updates["priority"] = priority
+
+    if "category" in data:
+        cat = (data["category"] or "work").lower()
+        valid_cats = {"work", "health", "personal", "learning", "social"}
+        updates["category"] = cat if cat in valid_cats else "work"
+
+    if "deadline" in data:
+        try:
+            new_deadline = _parse_deadline(data["deadline"])
+            updates["deadline"] = new_deadline
+            # Recompute difficulty
+            prio = updates.get("priority", task.get("priority", 2))
+            updates["difficulty_score"] = _calc_difficulty(prio, new_deadline)
+        except ValueError as e:
+            return jsonify(error_response(str(e), 400)[0]), 400
+
+    if not updates:
+        return jsonify(error_response("No valid fields to update.", 400)[0]), 400
+
+    db = get_db()
+    result = db.tasks.find_one_and_update(
+        {"_id": ObjectId(task_id), "userId": ObjectId(user_id), "status": "Pending"},
+        {"$set": updates},
+        return_document=True
+    )
+
+    if not result:
+        return jsonify(error_response("Update failed.", 500)[0]), 500
+
+    return jsonify({"success": True, "task": serialize_doc(result)}), 200
+
+
+def _calc_difficulty(priority: int, deadline: datetime) -> float:
+    from utils.helpers import utc_now
+    time_left = (deadline - utc_now()).total_seconds()
+    deadline_factor = max(0.0, min(1.0, 1.0 - time_left / (7 * 86400)))
+    priority_factor = (priority - 1) / 2.0
+    return round(0.5 * deadline_factor + 0.5 * priority_factor, 3)
 
 
 @task_bp.route("/<task_id>", methods=["DELETE"])
@@ -155,16 +226,15 @@ def _auto_miss_overdue(user_id: str):
     from utils.db import get_db
     from utils.helpers import utc_now
 
-    db = get_db()
+    db  = get_db()
     now = utc_now()
     overdue = list(db.tasks.find({
-        "userId": ObjectId(user_id),
-        "status": "Pending",
+        "userId":   ObjectId(user_id),
+        "status":   "Pending",
         "deadline": {"$lt": now}
     }))
 
     for t in overdue:
         tid = str(t["_id"])
         mark_task_missed(tid, Config.XP_MISSED)
-        # Deduct XP directly (no multiplier on penalties)
         update_user_xp(user_id, Config.XP_MISSED)

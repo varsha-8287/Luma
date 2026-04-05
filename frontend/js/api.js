@@ -64,6 +64,7 @@ const API = (() => {
   const createTask  = (body)   => request('POST',   '/tasks', body);
   const completeTask= (id)     => request('PUT',    `/tasks/${id}/complete`);
   const deleteTask  = (id)     => request('DELETE', `/tasks/${id}`);
+  const editTask    = (id, body) => request('PUT',    `/tasks/${id}/edit`, body);
   const getSmartRanked = ()    => request('GET',    '/tasks/smart-ranked');
 
   // ============================================================
@@ -101,13 +102,47 @@ const API = (() => {
   const getReminders      = () => request('GET',  '/reminders');
   const acknowledgeReminder=(id)=> request('PUT', `/reminders/${id}/ack`);
 
+
+  // ============================================================
+  // GAMES
+  // ============================================================
+  const submitGameScore = (gameId, score, duration, won, metadata = {}) =>
+    request('POST', '/games/score', { gameId, score, duration, won, metadata });
+
+  const getGameStats       = ()             => request('GET', '/games/stats');
+  const getGameHistory     = (game, limit)  => request('GET', `/games/history${game ? `?game=${game}&limit=${limit||20}` : `?limit=${limit||20}`}`);
+  const getGameLeaderboard = (gameId)       => request('GET', `/games/leaderboard/${gameId}`);
+  const getGameXP          = ()             => request('GET', '/games/xp');
+
+  // ============================================================
+  // ALARMS  (DB-backed — replaces localStorage)
+  // ============================================================
+  const createAlarmDB  = (label, time, voiceProfile, repeat) =>
+    request('POST', '/alarms', { label, time, voiceProfile, repeat });
+
+  const getAlarmsDB    = ()            => request('GET',    '/alarms');
+  const toggleAlarmDB  = (id)          => request('PUT',    `/alarms/${id}/toggle`);
+  const triggerAlarmDB = (id, snoozed) => request('PUT',    `/alarms/${id}/trigger`, { snoozed });
+  const deleteAlarmDB  = (id)          => request('DELETE', `/alarms/${id}`);
+
+  // ============================================================
+  // NOTIFICATIONS  (DB-backed — replaces localStorage)
+  // ============================================================
+  const getNotifications  = (unreadOnly = false, limit = 50) =>
+    request('GET', `/notifications?unread=${unreadOnly}&limit=${limit}`);
+  const getUnreadCount    = ()    => request('GET', '/notifications/unread-count');
+  const markAllNotifRead  = ()    => request('PUT', '/notifications/read-all');
+  const markNotifRead     = (id)  => request('PUT',    `/notifications/${id}/read`);
+  const deleteNotif       = (id)  => request('DELETE', `/notifications/${id}`);
+  const clearAllNotifs    = ()    => request('DELETE', '/notifications');
+
   return {
     // token helpers
     getToken, setToken, removeToken, getUser, setUser,
     // auth
     register, login, logout,
     // tasks
-    getTasks, createTask, completeTask, deleteTask, getSmartRanked,
+    getTasks, createTask, completeTask, deleteTask, editTask, getSmartRanked,
     // mood
     logMood, getDailySummary, getMoods,
     // analytics
@@ -117,6 +152,12 @@ const API = (() => {
     // journal
     getJournal, createJournal, deleteJournal,
     // reminders
-    getReminders, acknowledgeReminder
+    getReminders, acknowledgeReminder,
+    // games
+    submitGameScore, getGameStats, getGameHistory, getGameLeaderboard, getGameXP,
+    // alarms (DB)
+    createAlarmDB, getAlarmsDB, toggleAlarmDB, triggerAlarmDB, deleteAlarmDB,
+    // notifications (DB)
+    getNotifications, getUnreadCount, markAllNotifRead, markNotifRead, deleteNotif, clearAllNotifs
   };
 })();

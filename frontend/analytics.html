@@ -1,18 +1,74 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Analytics</title>
-    <link rel="stylesheet" href="css/dashboard.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Luma — Analytics</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="css/dashboard.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 </head>
-<body>
+<body class="dashboard-page">
 
-<h2 style="text-align:center;">Your Productivity Wrapped 📊</h2>
+  <script>
+    // Auth guard — redirect to login if no token
+    if (!localStorage.getItem('qf_token')) {
+      window.location.href = 'index.html';
+    }
+  </script>
 
-<canvas id="completionChart"></canvas>
-<canvas id="moodChart"></canvas>
+  <main class="main-content" style="padding: 32px; max-width: 1100px; margin: 0 auto;">
+    <div class="section-header" style="margin-bottom: 28px;">
+      <div>
+        <h2>Analytics</h2>
+        <p>Your productivity story, visualized</p>
+      </div>
+      <a href="dashboard.html" class="btn-ghost" style="width:auto; padding:10px 18px; text-decoration:none;">
+        <i class="fas fa-arrow-left"></i> Back to Dashboard
+      </a>
+    </div>
 
-<script src="js/api.js"></script>
-<script src="js/analytics.js"></script>
+    <!-- Charts -->
+    <div class="analytics-grid">
+      <div class="chart-card wide">
+        <div class="card-header"><h3><i class="fas fa-chart-bar"></i> XP Earned This Week</h3></div>
+        <div class="chart-wrap">
+          <canvas id="xpChart" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="card-header"><h3><i class="fas fa-smile"></i> Mood vs Productivity</h3></div>
+        <div class="chart-wrap">
+          <canvas id="moodChart" height="220"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="card-header"><h3><i class="fas fa-clock"></i> Completion Heatmap</h3></div>
+        <div class="heatmap-wrap" id="heatmapWrap"></div>
+      </div>
+
+      <div class="chart-card wide">
+        <div class="card-header"><h3><i class="fas fa-layer-group"></i> Category Breakdown</h3></div>
+        <div class="chart-wrap chart-row">
+          <canvas id="categoryChart" height="200" style="max-width:280px"></canvas>
+          <div class="category-legend" id="categoryLegend"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/analytics.js"></script>
+  <script>
+    // Auto-load on page ready
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAnalytics();
+    });
+  </script>
 </body>
 </html>

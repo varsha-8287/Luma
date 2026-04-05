@@ -202,6 +202,7 @@ async function loadDashboardData() {
 
     if (tasks.status === 'fulfilled') {
       window._tasks = tasks.value;
+      if (typeof _checkProactiveNotifications === 'function') _checkProactiveNotifications();
       renderDashboardTasks(tasks.value);
       renderTaskBoard(tasks.value);
       updateTaskBadge(tasks.value);
@@ -554,20 +555,27 @@ function escHtml(str) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function formatDeadline(dt) {
-  if (!dt) return '';
-  const d = new Date(dt);
-  const now = new Date();
-  const diff = d - now;
-  if (diff < 0) return '⚠ Overdue';
-  if (diff < 3600000) return `${Math.round(diff/60000)}m left`;
-  if (diff < 86400000) return `${Math.round(diff/3600000)}h left`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// formatDeadline: timezone-safe version defined in task.js (parseDeadline-based).
+// This stub is kept for backward compatibility but defers to task.js at runtime.
+if (typeof formatDeadline === 'undefined') {
+  window.formatDeadline = function(dt) {
+    if (!dt) return '';
+    const d = new Date(dt);
+    const now = new Date();
+    const diff = d - now;
+    if (diff < 0) return '⚠ Overdue';
+    if (diff < 3600000) return `${Math.round(diff/60000)}m left`;
+    if (diff < 86400000) return `${Math.round(diff/3600000)}h left`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 }
 
-function getCategoryEmoji(cat) {
-  const map = { work: '💼', health: '💪', personal: '🏠', learning: '📚', social: '👥' };
-  return map[cat] || '📌';
+// getCategoryEmoji defined in task.js — skip duplicate
+if (typeof getCategoryEmoji === 'undefined') {
+  window.getCategoryEmoji = function(cat) {
+    const map = { work: '💼', health: '💪', personal: '🏠', learning: '📚', social: '👥' };
+    return map[cat] || '📌';
+  };
 }
 
 // XP float animation
