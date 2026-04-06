@@ -102,6 +102,9 @@ function buildJournalCard(entry, i = 0) {
         <button class="btn-tts" onclick="readJournalEntry('${id}')" title="Read aloud">
           <i class="fas fa-volume-up"></i> Read
         </button>
+        <button class="btn-edit-journal" onclick="openEditJournalModal('${id}')" title="Edit entry">
+          <i class="fas fa-pen"></i>
+        </button>
         <button class="btn-sm" onclick="deleteJournalEntry('${id}', this)" title="Delete">
           <i class="fas fa-trash"></i>
         </button>
@@ -137,6 +140,9 @@ function openJournalView(id) {
       <div class="modal-actions" style="margin-top:24px">
         <button class="btn-ghost" onclick="readJournalEntry('${entry._id||entry.id}')">
           <i class="fas fa-volume-up"></i> Read Aloud
+        </button>
+        <button class="btn-ghost" onclick="openEditJournalModal('${entry._id||entry.id}'); document.getElementById('journalViewModal').remove()">
+          <i class="fas fa-pen"></i> Edit
         </button>
         <button class="btn-ghost" onclick="document.getElementById('journalViewModal').remove()">Close</button>
       </div>
@@ -200,11 +206,103 @@ async function deleteJournalEntry(id, btn) {
   }
 }
 
+// ============================================================
+// EDIT JOURNAL ENTRY
+// ============================================================
+function openEditJournalModal(id) {
+  const entry = journalEntries.find(e => (e._id || e.id) === id);
+  if (!entry) return;
+
+  document.getElementById('editJournalModal')?.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'editJournalModal';
+  modal.innerHTML = `
+    <div class="modal journal-modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-pen"></i> Edit Journal Entry</h3>
+        <button class="modal-close" onclick="closeEditJournalModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="editJournalTitle" value="${escHtml(entry.title)}" placeholder="Entry title..."/>
+      </div>
+      <div class="form-group">
+        <label>Content</label>
+        <textarea id="editJournalContent" placeholder="Write freely..." rows="8">${escHtml(entry.content || '')}</textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="closeEditJournalModal()">Cancel</button>
+        <button class="btn-primary" id="editJournalSaveBtn" onclick="saveEditJournal('${entry._id || entry.id}')">
+          <i class="fas fa-save"></i> Save Changes
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('editJournalTitle')?.focus();
+}
+
+function closeEditJournalModal() {
+  document.getElementById('editJournalModal')?.remove();
+}
+
+async function saveEditJournal(id) {
+  const title   = document.getElementById('editJournalTitle')?.value.trim();
+  const content = document.getElementById('editJournalContent')?.value.trim();
+  if (!title || !content) { alert('Title and content are required.'); return; }
+
+  const btn = document.getElementById('editJournalSaveBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+
+  try {
+    const data = await API.editJournal(id, { title, content });
+    const updated = data.entry || data;
+
+    // Update in local array
+    journalEntries = journalEntries.map(e =>
+      (e._id || e.id) === id ? { ...e, ...updated } : e
+    );
+    renderJournalGrid(journalEntries);
+    closeEditJournalModal();
+    ttsSpeak('Journal entry updated.');
+  } catch (err) {
+    alert('Could not update entry: ' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Save Changes'; }
+  }
+}
+
+// Inject edit-journal button styles
+(function injectEditJournalCSS() {
+  if (document.getElementById('edit-journal-css')) return;
+  const s = document.createElement('style');
+  s.id = 'edit-journal-css';
+  s.textContent = `
+    .btn-edit-journal {
+      background: rgba(61,157,243,0.12);
+      border: 1px solid rgba(61,157,243,0.3);
+      color: var(--blue);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 0.78rem; font-weight: 700;
+      cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px;
+      transition: all var(--transition);
+    }
+    .btn-edit-journal:hover { background: var(--blue); color: #fff; }
+  `;
+  document.head.appendChild(s);
+})();
+
 // Close on Escape
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  const em = document.getElementById('editJournalModal');
+  if (em) { closeEditJournalModal(); return; }
   const jm = document.getElementById('journalModal');
   if (jm && !jm.classList.contains('hidden')) closeJournalModal();
   const mm = document.getElementById('moodModal');
   if (mm && !mm.classList.contains('hidden')) closeMoodModal();
-}); 
+});

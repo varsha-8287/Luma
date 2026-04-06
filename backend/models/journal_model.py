@@ -41,6 +41,19 @@ def get_entry_by_id(entry_id: str, user_id: str) -> dict | None:
         return None
 
 
+def update_entry(entry_id: str, user_id: str, title: str, content: str) -> dict | None:
+    db = get_db()
+    try:
+        result = db.journals.find_one_and_update(
+            {"_id": ObjectId(entry_id), "userId": ObjectId(user_id)},
+            {"$set": {"title": title.strip(), "content": content.strip()}},
+            return_document=True
+        )
+        return serialize_doc(result) if result else None
+    except Exception:
+        return None
+
+
 def delete_entry(entry_id: str, user_id: str) -> bool:
     db = get_db()
     result = db.journals.delete_one({

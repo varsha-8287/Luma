@@ -95,6 +95,7 @@ const API = (() => {
   const getJournal    = ()     => request('GET',    '/journal');
   const createJournal = (body) => request('POST',   '/journal', body);
   const deleteJournal = (id)   => request('DELETE', `/journal/${id}`);
+  const editJournal   = (id, body) => request('PUT', `/journal/${id}`, body);
 
   // ============================================================
   // REMINDERS
@@ -150,7 +151,7 @@ const API = (() => {
     // gamification
     getBadges, getXPHistory,
     // journal
-    getJournal, createJournal, deleteJournal,
+    getJournal, createJournal, deleteJournal, editJournal,
     // reminders
     getReminders, acknowledgeReminder,
     // games

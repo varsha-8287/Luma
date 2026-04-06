@@ -6,7 +6,7 @@ DELETE /api/journal/:id
 """
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.journal_model import create_entry, get_entries_by_user, delete_entry
+from models.journal_model import create_entry, get_entries_by_user, delete_entry, update_entry
 from utils.helpers import error_response
 
 journal_bp = Blueprint("journal", __name__, url_prefix="/api/journal")
@@ -41,6 +41,21 @@ def remove_entry(entry_id: str):
     if not deleted:
         return jsonify(error_response("Entry not found.", 404)[0]), 404
     return jsonify({"success": True, "message": "Entry deleted."}), 200
+
+
+@journal_bp.route("/<entry_id>", methods=["PUT"])
+@jwt_required()
+def edit_entry(entry_id: str):
+    user_id = get_jwt_identity()
+    data    = request.get_json(silent=True) or {}
+    title   = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not title or not content:
+        return jsonify(error_response("Title and content are required.", 400)[0]), 400
+    updated = update_entry(entry_id, user_id, title, content)
+    if not updated:
+        return jsonify(error_response("Entry not found.", 404)[0]), 404
+    return jsonify({"success": True, "entry": updated}), 200
 
 
 # ────────────────────────────────────────────────────────────

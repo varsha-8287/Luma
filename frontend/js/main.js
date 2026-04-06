@@ -159,13 +159,27 @@ if (document.getElementById('section-dashboard')) {
 
   currentUser = API.getUser();
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  // Scripts are at the bottom of <body> so DOMContentLoaded has already fired
+  // by the time this code runs — addEventListener would register too late.
+  // Use readyState check so it works in both cases.
+  async function initDashboard() {
+    console.log('[Luma] initDashboard() called, readyState:', document.readyState);
     initTimeGreeting();
     renderUserUI();
     await loadDashboardData();
     checkMoodPopup();
     checkReminders();
-  });
+  }
+
+  console.log('[Luma] section-dashboard found, readyState:', document.readyState);
+
+  if (document.readyState === 'loading') {
+    console.log('[Luma] DOM still loading — adding DOMContentLoaded listener');
+    document.addEventListener('DOMContentLoaded', initDashboard);
+  } else {
+    console.log('[Luma] DOM already ready — calling initDashboard directly');
+    initDashboard();
+  }
 }
 
 function initTimeGreeting() {
@@ -510,8 +524,11 @@ function logout() {
 function checkMoodPopup() {
   const lastMoodDate = localStorage.getItem('qf_last_mood');
   const today = new Date().toDateString();
+  console.log('[Luma] checkMoodPopup — lastMoodDate:', lastMoodDate, '| today:', today, '| will show:', lastMoodDate !== today);
   if (lastMoodDate !== today) {
+    console.log('[Luma] Scheduling mood popup in 1500ms...');
     setTimeout(() => {
+      console.log('[Luma] Opening mood modal now');
       openMoodModal();
       ttsSpeak('Good day! How are you feeling today?');
     }, 1500);
