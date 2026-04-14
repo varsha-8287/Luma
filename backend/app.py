@@ -35,6 +35,7 @@ from routes.reminder_routes  import reminder_bp
 from routes.journal_routes   import journal_bp, gamification_bp
 from routes.game_routes      import game_bp
 from routes.alarm_routes     import alarm_bp, notif_bp
+from services.alarm_call_service import alarm_call_job
 
 
 def create_app() -> Flask:
@@ -159,6 +160,17 @@ def _create_indexes():
         [("createdAt", ASCENDING)],
         expireAfterSeconds=2 * 24 * 3600,
         name="reminder_log_ttl_2d"
+    )
+
+    db.alarm_call_log.create_index(
+        [("alarmId", ASCENDING), ("firedAt", ASCENDING)],
+        name="alarm_call_log_dedup"
+    )
+
+    db.alarm_call_log.create_index(
+        [("firedAt", ASCENDING)],
+        expireAfterSeconds=7 * 24 * 3600,
+        name="alarm_call_log_ttl_7d"
     )
 
     print("✅ MongoDB indexes created/verified")
@@ -435,6 +447,15 @@ def start_scheduler(app: Flask):
         trigger=IntervalTrigger(seconds=60),
         id="task_reminder_job",
         name="Task deadline reminder (every 60s)",
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
+
+    scheduler.add_job(
+        func=alarm_call_job,
+        trigger=IntervalTrigger(seconds=60),
+        id="alarm_call_job",
+        name="Alarm wake-up call checker (every 60s)",
         replace_existing=True,
         misfire_grace_time=30,
     )

@@ -1,7 +1,7 @@
 """
 models/user_model.py — User document model
 Fields: name, email, password (hashed), totalXP, level, streak,
-        completedTasksCount, createdAt
+        completedTasksCount, phone (NEW), createdAt
 """
 from datetime import datetime, timezone
 from bson import ObjectId
@@ -22,6 +22,8 @@ def create_user(name: str, email: str, hashed_password: str) -> dict:
         "completedTasksCount": 0,
         "earlyCompletionCount": 0,
         "moodPositiveStreak": 0,
+        "phone": "",                    # ← NEW: phone number for alarm calls
+        "alarmCallEnabled": True,       # ← NEW: master toggle for alarm calls
         "lastActiveDate": None,
         "createdAt": utc_now(),
     }
@@ -86,6 +88,29 @@ def update_mood_positive_streak(user_id: str, streak: int):
         {"_id": ObjectId(user_id)},
         {"$set": {"moodPositiveStreak": streak}}
     )
+
+
+# ── NEW: Phone number management ──────────────────────────────
+
+def update_user_phone(user_id: str, phone: str, alarm_call_enabled: bool = True) -> dict | None:
+    """
+    Save or update the user's phone number for alarm wake-up calls.
+    phone should be in E.164 format e.g. +919876543210
+    """
+    db = get_db()
+    result = db.users.find_one_and_update(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "phone":            phone.strip(),
+            "alarmCallEnabled": alarm_call_enabled,
+        }},
+        return_document=True
+    )
+    if not result:
+        return None
+    updated = serialize_doc(result)
+    updated.pop("password", None)
+    return updated
 
 
 def get_public_user(user_doc: dict) -> dict:
