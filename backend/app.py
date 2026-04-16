@@ -1,17 +1,13 @@
 """
-app.py — Luma Backend Entry Point  v3.2.0
+app.py — Luma Backend Entry Point  v3.3.0
 ==========================================
-Fixes in v3.2.0:
-  - _REMINDER_WINDOWS overdue tuple: min_left was None which caused a
-    TypeError when doing `min_left <= minutes_left`.  Now uses a
-    sentinel value of -999 so the is_overdue branch is always taken
-    exclusively via the `triggered` boolean path.
-  - Added "about to end" window: 2-min warning (last chance alert).
-  - task_reminder_job: deadline timezone guard (pytz import was
-    inside the loop — moved to function scope to avoid repeated
-    import overhead).
-  - midnight_job: overdue_tasks loop used task["userId"] as ObjectId
-    but update_user_xp expects a str — now wraps with str().
+Changes in v3.3.0:
+  - Wake-Up Call mode fully wired:
+      • alarm_call_job   fires every 60 s  — places tier-0 Twilio calls
+      • escalation_check_job fires every 120 s — escalates unanswered calls
+        through tier-1 and tier-2 (angrier/warmer/more dramatic voice)
+  - Health-check endpoint updated with new alarm-call endpoints
+  - Version string bumped throughout
 """
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -35,7 +31,9 @@ from routes.reminder_routes  import reminder_bp
 from routes.journal_routes   import journal_bp, gamification_bp
 from routes.game_routes      import game_bp
 from routes.alarm_routes     import alarm_bp, notif_bp
-from services.alarm_call_service import alarm_call_job
+
+# ── Import background jobs ─────────────────────────────────────
+from services.alarm_call_service import alarm_call_job, escalation_check_job
 
 
 def create_app() -> Flask:
@@ -68,18 +66,30 @@ def create_app() -> Flask:
         return jsonify({
             "status":  "ok",
             "message": "🚀 Luma API is running!",
-            "version": "3.2.0",
+            "version": "3.3.0",
             "endpoints": {
                 "auth":          "/api/auth/register  /api/auth/login",
                 "tasks":         "/api/tasks  /api/tasks/smart-ranked",
                 "mood":          "/api/mood  /api/mood/daily-summary",
-                "analytics":     "/api/analytics/productivity-score  /api/analytics/patterns  /api/analytics/prediction  /api/analytics/wrapped",
+                "analytics":     (
+                    "/api/analytics/productivity-score  /api/analytics/patterns  "
+                    "/api/analytics/prediction  /api/analytics/wrapped"
+                ),
                 "journal":       "/api/journal",
                 "gamification":  "/api/gamification/badges  /api/gamification/xp-history",
                 "reminders":     "/api/reminders  /api/reminders/call",
-                "games":         "/api/games/score  /api/games/stats  /api/games/history  /api/games/leaderboard/<game>  /api/games/xp",
-                "alarms":        "/api/alarms  /api/alarms/<id>/toggle  /api/alarms/<id>/trigger",
-                "notifications": "/api/notifications  /api/notifications/unread-count  /api/notifications/read-all",
+                "games":         (
+                    "/api/games/score  /api/games/stats  /api/games/history  "
+                    "/api/games/leaderboard/<game>  /api/games/xp"
+                ),
+                "alarms":        (
+                    "/api/alarms  /api/alarms/<id>/toggle  /api/alarms/<id>/trigger  "
+                    "/api/alarms/phone  /api/alarms/test-call"
+                ),
+                "notifications": (
+                    "/api/notifications  /api/notifications/unread-count  "
+                    "/api/notifications/read-all"
+                ),
             }
         }), 200
 
@@ -114,36 +124,47 @@ def _create_indexes():
     from pymongo import ASCENDING, DESCENDING
     db = get_db()
 
-    db.users.create_index([(  "email", ASCENDING)], unique=True, name="users_email_unique")
+    db.users.create_index([("email", ASCENDING)], unique=True, name="users_email_unique")
 
-    db.tasks.create_index([(  "userId", ASCENDING), ("status",   ASCENDING)], name="tasks_user_status")
-    db.tasks.create_index([(  "userId", ASCENDING), ("deadline", ASCENDING)], name="tasks_user_deadline")
+    db.tasks.create_index([("userId", ASCENDING), ("status",   ASCENDING)], name="tasks_user_status")
+    db.tasks.create_index([("userId", ASCENDING), ("deadline", ASCENDING)], name="tasks_user_deadline")
 
-    db.moods.create_index([(  "userId", ASCENDING), ("timestamp", DESCENDING)], name="moods_user_time")
-    db.moods.create_index([(  "userId", ASCENDING), ("isDailySummary", ASCENDING)], name="moods_summary")
+    db.moods.create_index([("userId", ASCENDING), ("timestamp",     DESCENDING)], name="moods_user_time")
+    db.moods.create_index([("userId", ASCENDING), ("isDailySummary", ASCENDING)], name="moods_summary")
 
-    db.journals.create_index([(  "userId", ASCENDING), ("createdAt", DESCENDING)], name="journals_user_date")
+    db.journals.create_index([("userId", ASCENDING), ("createdAt", DESCENDING)], name="journals_user_date")
 
-    db.badges.create_index([(  "userId", ASCENDING), ("badge_id", ASCENDING)], unique=True, name="badges_user_badge")
+    db.badges.create_index(
+        [("userId", ASCENDING), ("badge_id", ASCENDING)],
+        unique=True, name="badges_user_badge"
+    )
 
-    db.xp_history.create_index([(  "userId", ASCENDING), ("timestamp", DESCENDING)], name="xp_user_time")
+    db.xp_history.create_index([("userId", ASCENDING), ("timestamp", DESCENDING)], name="xp_user_time")
 
-    db.game_scores.create_index([(  "userId", ASCENDING), ("gameId", ASCENDING)],     name="game_scores_user_game")
-    db.game_scores.create_index([(  "userId", ASCENDING), ("createdAt", DESCENDING)], name="game_scores_user_date")
-    db.game_scores.create_index([(  "gameId", ASCENDING), ("score", DESCENDING)],     name="game_scores_leaderboard")
+    db.game_scores.create_index([("userId", ASCENDING), ("gameId",    ASCENDING)],  name="game_scores_user_game")
+    db.game_scores.create_index([("userId", ASCENDING), ("createdAt", DESCENDING)], name="game_scores_user_date")
+    db.game_scores.create_index([("gameId", ASCENDING), ("score",     DESCENDING)], name="game_scores_leaderboard")
 
     db.game_stats.create_index(
         [("userId", ASCENDING), ("gameId", ASCENDING)],
-        unique=True,
-        name="game_stats_user_game_unique"
+        unique=True, name="game_stats_user_game_unique"
     )
-    db.game_stats.create_index([("gameId", ASCENDING), ("bestScore", DESCENDING)], name="game_stats_leaderboard")
+    db.game_stats.create_index(
+        [("gameId", ASCENDING), ("bestScore", DESCENDING)],
+        name="game_stats_leaderboard"
+    )
 
-    db.alarms.create_index([(  "userId", ASCENDING), ("createdAt", DESCENDING)], name="alarms_user_date")
-    db.alarms.create_index([(  "time",   ASCENDING), ("enabled",   ASCENDING)],  name="alarms_time_enabled")
+    db.alarms.create_index([("userId", ASCENDING), ("createdAt", DESCENDING)], name="alarms_user_date")
+    db.alarms.create_index([("time",   ASCENDING), ("enabled",   ASCENDING)],  name="alarms_time_enabled")
 
-    db.notifications.create_index([(  "userId", ASCENDING), ("createdAt", DESCENDING)], name="notifs_user_date")
-    db.notifications.create_index([(  "userId", ASCENDING), ("read",      ASCENDING)],  name="notifs_user_read")
+    db.notifications.create_index(
+        [("userId", ASCENDING), ("createdAt", DESCENDING)],
+        name="notifs_user_date"
+    )
+    db.notifications.create_index(
+        [("userId", ASCENDING), ("read", ASCENDING)],
+        name="notifs_user_read"
+    )
     db.notifications.create_index(
         [("createdAt", ASCENDING)],
         expireAfterSeconds=30 * 24 * 3600,
@@ -153,8 +174,7 @@ def _create_indexes():
 
     db.task_reminder_log.create_index(
         [("taskId", ASCENDING), ("window", ASCENDING)],
-        unique=True,
-        name="reminder_log_task_window_unique"
+        unique=True, name="reminder_log_task_window_unique"
     )
     db.task_reminder_log.create_index(
         [("createdAt", ASCENDING)],
@@ -162,11 +182,15 @@ def _create_indexes():
         name="reminder_log_ttl_2d"
     )
 
+    # alarm_call_log: dedup + TTL (auto-purge after 7 days)
     db.alarm_call_log.create_index(
-        [("alarmId", ASCENDING), ("firedAt", ASCENDING)],
+        [("alarmId", ASCENDING), ("minuteWindow", ASCENDING), ("tier", ASCENDING)],
         name="alarm_call_log_dedup"
     )
-
+    db.alarm_call_log.create_index(
+        [("tier", ASCENDING), ("firedAt", ASCENDING), ("escalated", ASCENDING)],
+        name="alarm_call_log_escalation"
+    )
     db.alarm_call_log.create_index(
         [("firedAt", ASCENDING)],
         expireAfterSeconds=7 * 24 * 3600,
@@ -187,12 +211,12 @@ def _create_indexes():
 #   TypeError: '<=' not supported between instances of 'NoneType' and 'float'
 # Fix: use -999 sentinel; overdue detection is handled by `is_overdue` flag only.
 #
-# NEW: "2min" (about-to-end) window added.
+# "2min" (about-to-end) window: fires 0–2 min before deadline.
 _REMINDER_WINDOWS = [
     ("30min",  28,   32,   "30min",   False),  # 28–32 min left
     ("10min",   8,   12,   "10min",   False),  #  8–12 min left
     ("5min",    3,    7,   "5min",    False),  #  3–7  min left
-    ("2min",    0,    2,   "2min",    False),  #  0–2  min left  ← NEW "about to end"
+    ("2min",    0,    2,   "2min",    False),  #  0–2  min left  ← last chance
     ("overdue",-999,  0,   "overdue", True),   # just passed deadline (0 to -2 min)
 ]
 
@@ -336,8 +360,8 @@ def midnight_job():
         from models.mood_model  import get_moods_in_range, save_daily_summary, count_positive_mood_streak
         from models.user_model  import update_user_xp, update_mood_positive_streak, find_user_by_id
         from models.alarm_model import get_enabled_alarms_at, record_alarm_trigger, create_notification
-        from services.gamification_engine import update_daily_streak, award_xp
-        from services.productivity_score  import compute_productivity_score
+        from services.gamification_engine  import update_daily_streak, award_xp
+        from services.productivity_score   import compute_productivity_score
         from services.scheduling_algorithm import rank_tasks_for_user
         from bson import ObjectId
 
@@ -430,9 +454,14 @@ def midnight_job():
         print(f"  ❌ Midnight cron error: {e}")
 
 
+# ══════════════════════════════════════════════════════════════
+# SCHEDULER
+# ══════════════════════════════════════════════════════════════
+
 def start_scheduler(app: Flask):
     scheduler = BackgroundScheduler(timezone=pytz.utc)
 
+    # ── Midnight cron (daily at 00:00 UTC) ────────────────────
     scheduler.add_job(
         func=midnight_job,
         trigger=CronTrigger(hour=0, minute=0, second=0, timezone=pytz.utc),
@@ -442,6 +471,7 @@ def start_scheduler(app: Flask):
         misfire_grace_time=300,
     )
 
+    # ── Task deadline reminders (every 60 s) ──────────────────
     scheduler.add_job(
         func=task_reminder_job,
         trigger=IntervalTrigger(seconds=60),
@@ -451,6 +481,8 @@ def start_scheduler(app: Flask):
         misfire_grace_time=30,
     )
 
+    # ── Alarm wake-up call — tier 0 (every 60 s) ─────────────
+    # Fires Twilio calls at the exact alarm minute for wake_call alarms
     scheduler.add_job(
         func=alarm_call_job,
         trigger=IntervalTrigger(seconds=60),
@@ -460,8 +492,22 @@ def start_scheduler(app: Flask):
         misfire_grace_time=30,
     )
 
+    # ── Alarm escalation — tier 1 & 2 (every 120 s) ──────────
+    # Calls back if the user hasn't answered, escalating the voice tone
+    scheduler.add_job(
+        func=escalation_check_job,
+        trigger=IntervalTrigger(seconds=120),
+        id="escalation_check_job",
+        name="Alarm call escalation checker (every 120s)",
+        replace_existing=True,
+        misfire_grace_time=30,
+    )
+
     scheduler.start()
-    print("✅ APScheduler started — midnight job at 00:00 UTC, task reminders every 60s")
+    print(
+        "✅ APScheduler started — midnight job at 00:00 UTC, "
+        "task reminders every 60s, alarm calls every 60s, escalation every 120s"
+    )
     atexit.register(lambda: scheduler.shutdown())
     return scheduler
 
@@ -476,13 +522,15 @@ if __name__ == "__main__":
 
     print(f"""
 ╔══════════════════════════════════════════════════╗
-║   🌟  Luma Backend  v3.2.0                       ║
+║   🌟  Luma Backend  v3.3.0                       ║
 ║   Running on  http://0.0.0.0:{Config.PORT:<5}             ║
 ║   MongoDB:    {Config.MONGO_URI[:38]}...  ║
 ║                                                  ║
 ║   Schedulers:                                    ║
-║     • Midnight cron     00:00 UTC daily           ║
-║     • Task reminders    every 60 seconds          ║
+║     • Midnight cron        00:00 UTC daily        ║
+║     • Task reminders       every 60 seconds       ║
+║     • Alarm wake-up calls  every 60 seconds       ║
+║     • Call escalation      every 120 seconds      ║
 ╚══════════════════════════════════════════════════╝
     """)
 

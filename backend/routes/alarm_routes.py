@@ -32,7 +32,8 @@ from models.alarm_model import (
     toggle_alarm, delete_alarm, record_alarm_trigger,
     create_notification, get_notifications_for_user,
     mark_all_read, mark_notification_read,
-    delete_notification, clear_all_notifications, get_unread_count
+    delete_notification, clear_all_notifications, get_unread_count,
+    VALID_ALARM_MODES
 )
 from models.user_model import update_user_phone, find_user_by_id, get_public_user
 from utils.helpers import error_response
@@ -55,18 +56,23 @@ def add_alarm():
     time          = (data.get("time") or "").strip()
     voice_profile = (data.get("voiceProfile") or data.get("voice_profile") or "strict").strip()
     repeat        = data.get("repeat", [])
+    alarm_mode    = (data.get("alarmMode") or data.get("alarm_mode") or "normal").strip()
+
+    if alarm_mode not in VALID_ALARM_MODES:
+        alarm_mode = "normal"
 
     if not time or len(time) != 5 or time[2] != ":":
         return jsonify(error_response("Invalid time format. Use HH:MM", 400)[0]), 400
     if not isinstance(repeat, list):
         repeat = []
 
-    alarm = create_alarm(user_id, label, time, voice_profile, repeat)
+    alarm = create_alarm(user_id, label, time, voice_profile, repeat, alarm_mode)
 
+    mode_label = "📞 Wake-Up Call" if alarm_mode == "wake_call" else "🔔 In-App"
     create_notification(
         user_id, "alarm",
         "⏰ Alarm Set!",
-        f'"{label}" alarm set for {time}.'
+        f'"{label}" alarm set for {time} · {mode_label} mode.'
     )
 
     return jsonify({"success": True, "alarm": alarm}), 201

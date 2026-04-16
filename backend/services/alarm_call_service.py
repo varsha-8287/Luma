@@ -1,24 +1,9 @@
 """
-services/alarm_call_service.py — Alarm Wake-Up Call System
-============================================================
-Fires a real Twilio voice call to the user when their alarm time arrives.
-
-Voice profiles:
-  strict    — firm, no-nonsense wake-up (like a drill sergeant)
-  loving    — warm, gentle good-morning call
-  dramatic  — over-the-top epic wake-up with theatrical flair
-
-Flow:
-  1. alarm_call_job() runs every 60s (registered in app.py scheduler)
-  2. Finds all enabled alarms matching current HH:MM + weekday
-  3. Looks up user's phone number
-  4. Places a Twilio call with the right TwiML script
-  5. Logs the call to prevent duplicate fires
-  6. Also pushes a DB notification so the app shows it
-
-Usage in app.py scheduler:
-  from services.alarm_call_service import alarm_call_job
-  scheduler.add_job(alarm_call_job, IntervalTrigger(seconds=60), id="alarm_call_job")
+services/alarm_call_service.py — Alarm Wake-Up Call System  v3.0
+=================================================================
+FIXED: Now properly handles BOTH alarm modes:
+  - normal    → in-app ring + TTS (handled by frontend, but backend logs it)
+  - wake_call → Twilio phone call with escalation tiers
 """
 
 from utils.db import get_db
@@ -27,235 +12,311 @@ from models.alarm_model import (
     get_enabled_alarms_at, record_alarm_trigger, create_notification
 )
 from config import Config
+import pytz
+
+ESCALATION_DELAY_SECONDS = 120   # 2 minutes before next escalation tier
 
 
-# ─────────────────────────────────────────────────────────────
-# Main job — called every 60 seconds by APScheduler
-# ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# MAIN ALARM JOB — runs every 60 seconds
+# ═══════════════════════════════════════════════════════════════
 
 def alarm_call_job():
     """
-    Every minute: check if any enabled alarm matches the current time.
-    If so, call the user on their registered phone number.
+    Runs every minute. For EVERY alarm (both normal and wake_call):
+      1. Records that the alarm fired (snoozeCount reset, lastTriggeredAt set)
+      2. Creates an in-app notification
+      3. For wake_call mode: ALSO places a Twilio phone call
+    
+    FIX: Previously this only handled wake_call mode. Now it handles both.
     """
     try:
         now         = utc_now()
-        time_str    = now.strftime("%H:%M")        # e.g. "07:30"
-        day_of_week = now.weekday()                # 0=Mon … 6=Sun
+        time_str    = now.strftime("%H:%M")
+        day_of_week = now.weekday()
 
+        # Get ALL alarms that should fire at this time (both normal and wake_call)
         alarms = get_enabled_alarms_at(time_str, day_of_week)
+        
         if not alarms:
             return
 
         db = get_db()
+        print(f"[alarm_call_job] Found {len(alarms)} alarm(s) to trigger at {time_str}")
 
         for alarm in alarms:
-            alarm_id = alarm["_id"]
-            user_id  = alarm["userId"]
+            alarm_id   = alarm["_id"]
+            user_id    = str(alarm["userId"])
+            alarm_mode = alarm.get("alarmMode", "normal")
+            label      = alarm.get("label", "Alarm")
 
-            # ── Idempotency: only fire once per alarm per minute ──
-            already_fired = db.alarm_call_log.find_one({
-                "alarmId": alarm_id,
-                "firedAt": {
-                    "$gte": now.replace(second=0, microsecond=0)
-                }
-            })
-            if already_fired:
+            print(f"[alarm_call_job] Processing alarm: {label} (mode={alarm_mode}) for user {user_id}")
+
+            # ── ALWAYS record the trigger (resets snoozeCount) ──
+            record_alarm_trigger(alarm_id, snoozed=False)
+
+            # ── ALWAYS create an in-app notification ──
+            mode_emoji = "📞" if alarm_mode == "wake_call" else "🔔"
+            create_notification(
+                user_id, "alarm",
+                f"{mode_emoji} {label}",
+                f"Your alarm '{label}' is ringing! Time to wake up!",
+                persistent=True
+            )
+
+            # ── ONLY for wake_call mode: place phone call ──
+            if alarm_mode == "wake_call":
+                # Check if we already placed a call for this exact minute (idempotency)
+                minute_window = now.replace(second=0, microsecond=0)
+                already_fired = db.alarm_call_log.find_one({
+                    "alarmId":      alarm_id,
+                    "minuteWindow": minute_window,
+                    "tier":         0,
+                })
+                if already_fired:
+                    print(f"[alarm_call_job] Already placed call for {label} at {minute_window}, skipping")
+                    continue
+
+                # Get user's phone number
+                from bson import ObjectId
+                user = db.users.find_one({"_id": ObjectId(user_id)})
+                if not user:
+                    print(f"[alarm_call_job] User {user_id} not found")
+                    continue
+
+                phone = user.get("phone", "").strip()
+                name  = user.get("name", "Hero")
+
+                if not phone:
+                    print(f"[alarm_call_job] ⚠️ Wake-call SKIPPED: user {user_id} has no phone number saved.")
+                    _log_call(db, alarm_id, user_id, alarm, minute_window,
+                              tier=0, status="no_phone_set")
+                    continue
+
+                print(f"[alarm_call_job] 📞 Placing wake-call to {phone} for '{label}' voice={alarm.get('voiceProfile','strict')}")
+
+                result = _place_alarm_call(
+                    user_id=user_id, phone=phone, name=name,
+                    alarm_label=label,
+                    voice_profile=alarm.get("voiceProfile", "strict"),
+                    tier=0,
+                )
+                status = "called_t0" if result.get("success") else f"failed:{result.get('error','unknown')}"
+                _log_call(db, alarm_id, user_id, alarm, minute_window,
+                          tier=0, status=status, call_sid=result.get("call_sid"))
+
+                if result.get("success"):
+                    print(f"[alarm_call_job] ✅ Wake-call placed: SID={result.get('call_sid')}")
+                else:
+                    print(f"[alarm_call_job] ❌ Wake-call FAILED: {result.get('error')}")
+            else:
+                # For normal mode, just log that we processed it
+                print(f"[alarm_call_job] 🔔 Normal alarm '{label}' triggered (in-app only)")
+
+            # Disable one-time alarms (no repeat days)
+            if not alarm.get("repeat"):
+                db.alarms.update_one(
+                    {"_id": alarm_id},
+                    {"$set": {"enabled": False}}
+                )
+                print(f"[alarm_call_job] Disabled one-time alarm '{label}'")
+
+    except Exception as e:
+        print(f"[alarm_call_job] ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+# ═══════════════════════════════════════════════════════════════
+# ESCALATION CHECK JOB — runs every 120 seconds
+# ═══════════════════════════════════════════════════════════════
+
+def escalation_check_job():
+    """
+    Find unanswered tier-0 calls and fire the next escalation tier.
+    This only applies to wake_call mode alarms.
+    """
+    try:
+        from datetime import timedelta
+        db  = get_db()
+        now = utc_now()
+        cutoff = now - timedelta(seconds=ESCALATION_DELAY_SECONDS)
+
+        tier0_logs = list(db.alarm_call_log.find({
+            "tier":       0,
+            "firedAt":    {"$lte": cutoff},
+            "escalated":  {"$ne": True},
+            "callStatus": {"$regex": "^called"},
+        }))
+
+        for log in tier0_logs:
+            alarm_id = log["alarmId"]
+            user_id  = str(log["userId"])
+
+            # Mark as escalated to prevent duplicate escalations
+            db.alarm_call_log.update_one(
+                {"_id": log["_id"]},
+                {"$set": {"escalated": True}}
+            )
+
+            from bson import ObjectId
+            alarm_doc = db.alarms.find_one({"_id": ObjectId(str(alarm_id))})
+            if not alarm_doc or not alarm_doc.get("enabled"):
                 continue
 
-            # ── Get user's phone number ──
-            from bson import ObjectId
+            # Only escalate if still in wake_call mode
+            if alarm_doc.get("alarmMode") != "wake_call":
+                continue
+
             user = db.users.find_one({"_id": ObjectId(user_id)})
             if not user:
                 continue
 
             phone = user.get("phone", "").strip()
-            name  = user.get("name", "Hero")
+            if not phone:
+                continue
 
-            # ── Record alarm trigger in DB ──
-            record_alarm_trigger(alarm_id, snoozed=False)
+            # Count how many calls today to determine tier
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            existing = db.alarm_call_log.count_documents({
+                "alarmId": alarm_id,
+                "firedAt": {"$gte": day_start},
+            })
+            tier = min(existing, 2)  # tier 0, 1, or 2
 
-            # ── Push in-app notification regardless of phone ──
+            print(f"[escalation_check_job] 📞 Escalating call for '{alarm_doc.get('label')}' to tier {tier}")
+
+            result = _place_alarm_call(
+                user_id=user_id, phone=phone,
+                name=user.get("name", "Hero"),
+                alarm_label=alarm_doc.get("label", "Wake Up"),
+                voice_profile=alarm_doc.get("voiceProfile", "strict"),
+                tier=tier,
+            )
+            status = f"called_t{tier}" if result.get("success") else f"failed_t{tier}"
+            _log_call(db, alarm_id, user_id, alarm_doc,
+                      minute_window=now.replace(second=0, microsecond=0),
+                      tier=tier, status=status, call_sid=result.get("call_sid"))
+
             create_notification(
                 user_id, "alarm",
-                f"⏰ {alarm['label']}",
-                f"Your alarm '{alarm['label']}' is ringing! Time to wake up!",
+                "📞 Still sleeping? Calling again...",
+                f"You didn't answer '{alarm_doc.get('label')}'. Calling again — louder!",
                 persistent=True
             )
-
-            # ── Make phone call if phone number is set ──
-            if phone:
-                result = _place_alarm_call(
-                    user_id       = user_id,
-                    phone         = phone,
-                    name          = name,
-                    alarm_label   = alarm.get("label", "Wake Up"),
-                    voice_profile = alarm.get("voiceProfile", "strict"),
-                )
-                call_status = "called" if result.get("success") else f"call_failed: {result.get('error')}"
-            else:
-                call_status = "no_phone_set"
-
-            # ── Log the fire event ──
-            db.alarm_call_log.insert_one({
-                "alarmId":     alarm_id,
-                "userId":      user_id,
-                "alarmLabel":  alarm.get("label", "Wake Up"),
-                "firedAt":     now,
-                "callStatus":  call_status,
-                "voiceProfile": alarm.get("voiceProfile", "strict"),
-            })
-
-            print(f"  🔔 Alarm fired: '{alarm.get('label')}' for user {user_id} — {call_status}")
+            print(f"[escalation_check_job] ✅ Escalation [tier {tier}] completed")
 
     except Exception as e:
-        print(f"  ❌ alarm_call_job error: {e}")
+        print(f"[escalation_check_job] ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
-# ─────────────────────────────────────────────────────────────
-# Twilio call
-# ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# TWILIO CALL PLACEMENT
+# ═══════════════════════════════════════════════════════════════
 
-def _place_alarm_call(user_id: str, phone: str, name: str,
-                      alarm_label: str, voice_profile: str) -> dict:
-    """Place the actual Twilio voice call."""
-
-    if not all([Config.TWILIO_ACCOUNT_SID,
-                Config.TWILIO_AUTH_TOKEN,
-                Config.TWILIO_PHONE_NUMBER]):
-        return {
-            "success": False,
-            "error": "Twilio not configured. Add TWILIO_ACCOUNT_SID, "
-                     "TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER to your .env"
-        }
-
+def _place_alarm_call(user_id, phone, name, alarm_label, voice_profile, tier=0):
+    """Place a Twilio call with the appropriate voice script."""
+    if not all([Config.TWILIO_ACCOUNT_SID, Config.TWILIO_AUTH_TOKEN, Config.TWILIO_PHONE_NUMBER]):
+        return {"success": False, "error": "Twilio not configured."}
+    
     try:
         from twilio.rest import Client
+        
+        twiml = _build_alarm_twiml(name, alarm_label, voice_profile, tier)
 
-        # Look up productivity score for context
-        db    = get_db()
-        from bson import ObjectId
-        user  = db.users.find_one({"_id": ObjectId(user_id)}) or {}
-        score = user.get("productivityScore", 60)
-        streak= user.get("streak", 0)
+        print(f"[_place_alarm_call] TwiML for {voice_profile} tier {tier}:")
+        print(twiml)
 
-        twiml  = _build_alarm_twiml(name, alarm_label, voice_profile, score, streak)
         client = Client(Config.TWILIO_ACCOUNT_SID, Config.TWILIO_AUTH_TOKEN)
-
         call = client.calls.create(
-            twiml=twiml,
-            to=phone,
-            from_=Config.TWILIO_PHONE_NUMBER
+            twiml=twiml, 
+            to=phone, 
+            from_=Config.TWILIO_PHONE_NUMBER,
+            timeout=30,
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
         )
         return {"success": True, "call_sid": call.sid}
-
     except ImportError:
         return {"success": False, "error": "twilio not installed. Run: pip install twilio"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
-# ─────────────────────────────────────────────────────────────
-# TwiML scripts per voice profile
-# ─────────────────────────────────────────────────────────────
+def _log_call(db, alarm_id, user_id, alarm, minute_window, tier, status, call_sid=None):
+    """Log call attempt for escalation tracking."""
+    db.alarm_call_log.insert_one({
+        "alarmId":      alarm_id,
+        "userId":       user_id,
+        "alarmLabel":   alarm.get("label", "Wake Up"),
+        "minuteWindow": minute_window,
+        "firedAt":      utc_now(),
+        "tier":         tier,
+        "callStatus":   status,
+        "callSid":      call_sid,
+        "voiceProfile": alarm.get("voiceProfile", "strict"),
+        "escalated":    False,
+    })
 
-def _build_alarm_twiml(name: str, label: str, profile: str,
-                       score: float, streak: int) -> str:
-    """
-    Build a TwiML response that sounds like a real wake-up call.
-    Each profile has a distinct personality.
-    """
 
-    # ── STRICT — firm drill-sergeant energy ──
-    if profile == "strict":
-        text = (
-            f"Attention {name}! "
-            f"This is your Luma wake-up call. "
-            f"Your alarm '{label}' is ringing right now. "
-            f"It is time to get up immediately. "
-            f"You have quests to complete today. "
-            f"Your current productivity score is {int(score)} out of 100. "
-        )
-        if streak > 0:
-            text += f"You have a {streak}-day streak on the line. Do not break it. "
-        text += (
-            f"No snoozing. No excuses. "
-            f"Get up, {name}. Your day starts NOW. "
-        )
-        voice = "alice"
-        rate  = "90%"
+# ═══════════════════════════════════════════════════════════════
+# TWIML SCRIPT BUILDER
+# ═══════════════════════════════════════════════════════════════
 
-    # ── LOVING — warm, gentle morning call ──
-    elif profile == "loving":
-        text = (
-            f"Good morning, {name}! "
-            f"This is your gentle wake-up call from Luma. "
-            f"Your alarm '{label}' is going off, and it's time to start your beautiful day. "
-            f"You've been doing so well "
-        )
-        if streak > 0:
-            text += f"— {streak} days of amazing consistency! "
-        text += (
-            f"Today is a fresh opportunity to accomplish great things. "
-            f"Take a deep breath, smile, and rise when you're ready. "
-            f"You've got this, {name}. "
-            f"Your quests are waiting, and I believe in you. "
-            f"Have a wonderful, productive day. Good morning! "
-        )
-        voice = "alice"
-        rate  = "95%"
+def _xml_escape(text: str) -> str:
+    """Escape XML special characters."""
+    return (text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;"))
 
-    # ── DRAMATIC — over-the-top epic theatre ──
-    elif profile == "dramatic":
-        text = (
-            f"RISE, {name.upper()}! "
-            f"The moment you have been waiting for has arrived! "
-            f"Your alarm — '{label}' — sounds the call to GREATNESS! "
-            f"The world trembles in anticipation of what you will achieve today! "
-            f"Your productivity score stands at {int(score)}. "
-        )
-        if streak > 0:
-            text += (
-                f"A {streak}-day streak of LEGENDARY proportions hangs in the balance! "
-            )
-        text += (
-            f"Mere mortals hit snooze. "
-            f"But YOU, {name}, are no mere mortal. "
-            f"You are a QUEST CHAMPION. "
-            f"So arise! Arise and CONQUER this day! "
-            f"Your epic adventure awaits! "
-        )
-        voice = "alice"
-        rate  = "85%"
 
-    else:
-        # fallback to strict
-        return _build_alarm_twiml(name, label, "strict", score, streak)
-
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
+def _build_alarm_twiml(name, label, profile, tier):
+    """Build TwiML response for the alarm call."""
+    tier = min(max(int(tier), 0), 2)
+    
+    scripts = {
+        "strict": [
+            f"Wake up, {name}! This is your Luma alarm '{label}'. Get out of bed immediately. No excuses!",
+            f"{name}! I called you already. This is the second call. Get up right now! This is unacceptable!",
+            f"That is it, {name}! Third call! Get up this instant or I am coming in there myself! You have been warned!"
+        ],
+        "loving": [
+            f"Good morning, {name}! This is your loving wake-up call. Time to start your beautiful day. Please get up soon!",
+            f"{name}, it is me again. I am getting worried. Please wake up, darling. Your quests are waiting!",
+            f"{name}, this is the third time I have called. I love you, but please get out of bed right now!"
+        ],
+        "dramatic": [
+            f"Hear ye, {name}! The alarm '{label}' doth sound! The cosmos trembles awaiting your rise! Arise!",
+            f"The herald returns! Oh {name}, still you slumber! The chronicle of your quest history grows darker! Wake!",
+            f"This is unprecedented! Three calls, {name}! Rise from your slumber! Become the hero this story deserves!"
+        ]
+    }
+    
+    lines = scripts.get(profile, scripts["strict"])
+    text = lines[tier] if tier < len(lines) else lines[-1]
+    
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="{voice}" rate="{rate}">{text}</Say>
+    <Say voice="alice" rate="90%">{_xml_escape(text)}</Say>
     <Pause length="1"/>
-    <Say voice="{voice}" rate="{rate}">
-        Press any key to dismiss this alarm, or simply hang up.
-        Goodbye, {name}!
-    </Say>
-    <Gather numDigits="1" timeout="10"/>
-</Response>"""
+    <Say voice="alice" rate="90%">Good luck on your quests today. Goodbye.</Say>
+</Response>'''
 
 
-# ─────────────────────────────────────────────────────────────
-# Manual call trigger (used by alarm_routes.py for test calls)
-# ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# TEST CALL FUNCTION
+# ═══════════════════════════════════════════════════════════════
 
 def trigger_test_alarm_call(user_id: str) -> dict:
-    """
-    Lets the user trigger a test call from the settings page
-    to verify their phone number before relying on it for real alarms.
-    """
-    db   = get_db()
+    """Fire a test call to verify the user's phone and voice settings."""
     from bson import ObjectId
+    db = get_db()
     user = db.users.find_one({"_id": ObjectId(user_id)})
+    
     if not user:
         return {"success": False, "error": "User not found"}
 
@@ -263,10 +324,19 @@ def trigger_test_alarm_call(user_id: str) -> dict:
     if not phone:
         return {"success": False, "error": "No phone number saved. Add one in Settings first."}
 
+    # Get the most recent wake_call alarm for voice profile
+    latest_alarm = db.alarms.find_one(
+        {"userId": ObjectId(user_id), "alarmMode": "wake_call"},
+        sort=[("createdAt", -1)]
+    )
+    voice_profile = (latest_alarm or {}).get("voiceProfile", "strict")
+    alarm_label = (latest_alarm or {}).get("label", "Test Alarm")
+
     return _place_alarm_call(
-        user_id       = user_id,
-        phone         = phone,
-        name          = user.get("name", "Hero"),
-        alarm_label   = "Test Alarm",
-        voice_profile = "loving",   # always friendly for test
+        user_id=user_id,
+        phone=phone,
+        name=user.get("name", "Hero"),
+        alarm_label=alarm_label,
+        voice_profile=voice_profile,
+        tier=0,
     )

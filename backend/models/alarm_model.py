@@ -11,6 +11,7 @@ from utils.helpers import serialize_doc, serialize_list, utc_now
 
 
 VALID_VOICE_PROFILES = {"strict", "loving", "dramatic"}
+VALID_ALARM_MODES    = {"normal", "wake_call"}      # normal = in-app only; wake_call = Twilio phone call
 VALID_NOTIF_TYPES    = {"alarm", "task", "streak", "badge", "reminder", "mood", "game"}
 
 NOTIF_ICONS = {
@@ -29,14 +30,19 @@ NOTIF_ICONS = {
 # ══════════════════════════════════════════════
 
 def create_alarm(user_id: str, label: str, time: str,
-                 voice_profile: str = "strict", repeat: list = None) -> dict:
+                 voice_profile: str = "strict", repeat: list = None,
+                 alarm_mode: str = "normal") -> dict:
     """
     Create a new alarm.
-    time   = "HH:MM" string
-    repeat = list of weekday ints [0-6]. Empty = one-time alarm.
+    time       = "HH:MM" string
+    repeat     = list of weekday ints [0-6]. Empty = one-time alarm.
+    alarm_mode = "normal"    → in-app ring + TTS only
+                 "wake_call" → Twilio phone call at alarm time
     """
     if voice_profile not in VALID_VOICE_PROFILES:
         voice_profile = "strict"
+    if alarm_mode not in VALID_ALARM_MODES:
+        alarm_mode = "normal"
 
     db = get_db()
     doc = {
@@ -44,6 +50,7 @@ def create_alarm(user_id: str, label: str, time: str,
         "label":           (label or "Wake Up").strip(),
         "time":            time,
         "voiceProfile":    voice_profile,
+        "alarmMode":       alarm_mode,
         "repeat":          repeat or [],
         "enabled":         True,
         "snoozeCount":     0,
